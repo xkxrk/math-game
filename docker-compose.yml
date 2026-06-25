@@ -1,0 +1,15 @@
+services:
+  dlt:
+    build: .
+    image: dlt-predict:latest
+    container_name: dlt-predict
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - TZ=Asia/Shanghai
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=admin
+      - SESSION_SECRET=change-me-to-random-value
+    restart: always
