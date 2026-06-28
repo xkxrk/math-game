@@ -1,8 +1,8 @@
 <template>
-  <div class="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 text-slate-100">
-    <div class="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-10">
+  <div class="h-screen overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 text-slate-100 flex flex-col">
+    <div class="mx-auto max-w-5xl w-full px-4 sm:px-6 py-4 sm:py-6 flex-1 min-h-0 flex flex-col">
       <!-- 头部 -->
-      <div class="mb-6 sm:mb-8">
+      <div class="mb-4 sm:mb-6 shrink-0">
         <div class="flex flex-col items-center gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div class="flex items-center justify-center sm:justify-start gap-3">
             <img src="/favicon.svg" alt="Logo" class="w-11 h-11 drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]" />
@@ -30,7 +30,7 @@
       </div>
 
       <!-- 主体 -->
-      <LotteryView />
+      <LotteryView class="flex-1 min-h-0" />
     </div>
 
     <Toast ref="toastRef" />

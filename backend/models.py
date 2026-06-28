@@ -108,6 +108,7 @@ class UserBet(Base):
     source = Column(String, nullable=True)  # 来源: ai_predict / manual / backtest
     reason = Column(Text, nullable=True)  # 选号理由(来自AI预测)
     cost = Column(Integer, default=2)  # 每注2元
+    llm_model = Column(String, nullable=True)  # 生成该号码时使用的模型
     note = Column(Text, nullable=True)  # 用户备注
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     # 开奖后自动填充

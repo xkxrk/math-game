@@ -32,6 +32,7 @@ class AdoptRequest(BaseModel):
     target_issue: str = ""  # 目标期号(空=下一期)
     source: str = "manual"  # ai_predict / manual / backtest
     reason: str = ""  # 选号理由
+    llm_model: str = ""  # 生成该号码时使用的模型
     note: str = ""  # 用户备注
 
 
@@ -62,6 +63,7 @@ def adopt_bet(req: AdoptRequest, db: Session = Depends(get_db)):
         target_issue=target_issue,
         source=req.source,
         reason=req.reason or None,
+        llm_model=req.llm_model or None,
         note=req.note or None,
         cost=prize.BET_COST,
     )
@@ -83,6 +85,7 @@ def adopt_bet(req: AdoptRequest, db: Session = Depends(get_db)):
 @router.get("")
 def list_bets(
     status: str = "all",  # all / pending / evaluated
+    llm_model: str = "",  # 按模型筛选
     limit: int = 100,
     db: Session = Depends(get_db),
 ):
@@ -94,6 +97,8 @@ def list_bets(
         q = q.filter(models.UserBet.evaluated == False)
     elif status == "evaluated":
         q = q.filter(models.UserBet.evaluated == True)
+    if llm_model:
+        q = q.filter(models.UserBet.llm_model == llm_model)
     rows = q.order_by(models.UserBet.created_at.desc()).limit(limit).all()
 
     return [
@@ -106,6 +111,7 @@ def list_bets(
             "reason": r.reason,
             "note": r.note,
             "cost": r.cost,
+            "llm_model": r.llm_model,
             "created_at": r.created_at.isoformat() if r.created_at else None,
             "evaluated": r.evaluated,
             "actual_red_balls": r.actual_red_balls.split(",") if r.actual_red_balls else None,
@@ -119,6 +125,22 @@ def list_bets(
         }
         for r in rows
     ]
+
+
+@router.get("/models")
+def list_bet_models(db: Session = Depends(get_db)):
+    """获取投注记录中使用过的所有模型列表（用于筛选）。"""
+    rows = (
+        db.query(models.UserBet.llm_model)
+        .filter(
+            models.UserBet.lottery_type == config.LOTTERY_TYPE,
+            models.UserBet.llm_model.isnot(None),
+        )
+        .distinct()
+        .all()
+    )
+    models_list = sorted({r[0] for r in rows if r[0]})
+    return {"models": models_list}
 
 
 # ------------------------------------------------------------------ #

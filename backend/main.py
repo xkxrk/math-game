@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 import config
 from database import init_db, SessionLocal
 from routes import lottery, predict, admin, sse, backtest, bets, analyze
+from routes import llm_settings
 from scraper import DltScraper
 from scheduler import start_scheduler, stop_scheduler
 
@@ -83,6 +84,7 @@ app.include_router(sse.router)
 app.include_router(backtest.router)
 app.include_router(bets.router)
 app.include_router(analyze.router)
+app.include_router(llm_settings.router)
 
 
 @app.get("/api/health")

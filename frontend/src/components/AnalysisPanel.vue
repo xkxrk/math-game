@@ -1,18 +1,19 @@
 <template>
-  <div>
+  <div class="h-full overflow-y-auto pr-1">
     <!-- 子标签 -->
-    <div class="flex flex-wrap gap-2 mb-4">
+    <div class="flex flex-wrap gap-1 p-1.5 rounded-xl bg-white/5 border border-white/10 mb-5">
       <button
         v-for="sub in subTabs"
         :key="sub.id"
         @click="subActive = sub.id"
         :class="[
-          'px-4 py-2 rounded-lg text-sm font-bold transition',
+          'px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5',
           subActive === sub.id
-            ? 'bg-violet-500 text-white shadow'
-            : 'bg-white/10 text-slate-300 hover:bg-white/20',
+            ? 'bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white shadow-md'
+            : 'text-slate-400 hover:text-slate-100 hover:bg-white/5',
         ]"
       >
+        <span class="text-[10px] opacity-70">{{ sub.icon }}</span>
         {{ sub.name }}
       </button>
     </div>
@@ -193,14 +194,16 @@
     <!-- ========== 2. 遗漏值排行 ========== -->
     <div v-show="subActive === 'miss'">
       <div class="flex items-center gap-3 mb-4">
-        <select
+        <USelect
           v-model="missType"
+          :options="[
+            { value: 'red', label: '前区(1-35)' },
+            { value: 'blue', label: '后区(1-12)' },
+          ]"
+          placeholder="请选择"
           @change="loadMiss"
-          class="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm text-slate-100 outline-none"
-        >
-          <option value="red" class="bg-slate-800">前区(1-35)</option>
-          <option value="blue" class="bg-slate-800">后区(1-12)</option>
-        </select>
+          class="w-[140px]"
+        />
         <span class="text-xs text-slate-500">遗漏值=距上次出现已隔几期（基于最近200期）。颜色越深表示遗漏越久。</span>
       </div>
 
@@ -277,14 +280,16 @@
     <!-- ========== 4. 奇偶/大小比 ========== -->
     <div v-show="subActive === 'ratio'">
       <div class="flex items-center gap-3 mb-4">
-        <select
+        <USelect
           v-model="ratioType"
+          :options="[
+            { value: 'odd_even', label: '奇偶比' },
+            { value: 'big_small', label: '大小比' },
+          ]"
+          placeholder="请选择"
           @change="loadRatio"
-          class="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm text-slate-100 outline-none"
-        >
-          <option value="odd_even" class="bg-slate-800">奇偶比</option>
-          <option value="big_small" class="bg-slate-800">大小比</option>
-        </select>
+          class="w-[120px]"
+        />
         <span class="text-xs text-slate-500">{{ ratioType === 'odd_even' ? '5个号码中奇数:偶数' : '5个号码中大号(≥18):小号(≤17)' }}</span>
       </div>
       <div v-if="ratioData" class="space-y-3">
@@ -688,16 +693,13 @@
       <div class="flex flex-wrap items-end gap-3 mb-4">
         <div>
           <label class="block text-xs text-slate-400 mb-1">选择期号</label>
-          <select
+          <USelect
             v-model="reviewIssue"
+            :options="reviewIssueOptions"
+            placeholder="-- 请选择 --"
             @change="onReviewIssueChange"
-            class="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm text-slate-100 outline-none min-w-[200px]"
-          >
-            <option value="" class="bg-slate-800">-- 请选择 --</option>
-            <option v-for="i in reviewIssues" :key="i.issue" :value="i.issue" class="bg-slate-800">
-              {{ i.issue }} ({{ i.date }})
-            </option>
-          </select>
+            class="w-[220px]"
+          />
         </div>
         <button
           v-if="reviewResult"
@@ -1150,22 +1152,23 @@ import { useToast } from '../composables/useToast.js'
 import BallDisplay from './BallDisplay.vue'
 import SumLineChart from './charts/SumLineChart.vue'
 import PoolLineChart from './charts/PoolLineChart.vue'
+import USelect from './USelect.vue'
 
 const toast = useToast()
 const subActive = ref('doctor')
 
 const subTabs = [
-  { id: 'doctor', name: '组合诊断' },
-  { id: 'miss', name: '遗漏值' },
-  { id: 'sum', name: '和值分布' },
-  { id: 'ratio', name: '奇偶大小' },
-  { id: 'pool', name: '奖池趋势' },
-  { id: 'frequency', name: '频率统计' },
-  { id: 'expected-value', name: '期望值' },
-  { id: 'strategy-compare', name: '策略对比' },
-  { id: 'review', name: '历史复盘' },
-  { id: 'sandbox', name: '策略沙盒' },
-  { id: 'alerts', name: '实时预警' },
+  { id: 'doctor', name: '组合诊断', icon: '🩺' },
+  { id: 'miss', name: '遗漏值', icon: '⏳' },
+  { id: 'sum', name: '和值分布', icon: '📊' },
+  { id: 'ratio', name: '奇偶大小', icon: '⚖️' },
+  { id: 'pool', name: '奖池趋势', icon: '💰' },
+  { id: 'frequency', name: '频率统计', icon: '📈' },
+  { id: 'expected-value', name: '期望值', icon: '🎯' },
+  { id: 'strategy-compare', name: '策略对比', icon: '⚔️' },
+  { id: 'review', name: '历史复盘', icon: '🔍' },
+  { id: 'sandbox', name: '策略沙盒', icon: '🧪' },
+  { id: 'alerts', name: '实时预警', icon: '🔔' },
 ]
 
 // ---------- 组合诊断器 ----------
@@ -1413,6 +1416,10 @@ function strategyBarWidth(netProfit) {
 // ---------- 历史复盘 ----------
 const reviewIssues = ref([])
 const reviewIssue = ref('')
+const reviewIssueOptions = computed(() => [
+  { value: '', label: '-- 请选择 --' },
+  ...reviewIssues.value.map(i => ({ value: i.issue, label: `${i.issue} (${i.date})` })),
+])
 const reviewReds = ref(['', '', '', '', ''])
 const reviewBlues = ref(['', ''])
 const reviewLoading = ref(false)
@@ -1663,6 +1670,13 @@ function stopAlerts() {
   alertsConnected.value = false
 }
 
+// 主动拉取一次预警快照（用于数据更新后立即刷新，不必等 SSE 30 秒周期）
+async function refreshAlertsSnapshot() {
+  try {
+    alertsData.value = await api.getAlertsSnapshot()
+  } catch {}
+}
+
 // 子标签切走时暂停订阅，切回时恢复
 watch(subActive, (val) => {
   if (val === 'alerts') startAlerts()
@@ -1690,5 +1704,35 @@ onMounted(async () => {
   loadRatio()
   loadPool()
   loadFrequency()
+  // 监听数据更新事件
+  window.addEventListener('lottery-data-updated', onDataUpdated)
 })
+
+onUnmounted(() => {
+  window.removeEventListener('lottery-data-updated', onDataUpdated)
+})
+
+function onDataUpdated() {
+  // 重新加载最新开奖和分析数据
+  try {
+    api.getLatest().then((d) => {
+      const reds = d.red_balls.split(',').sort((a, b) => a - b)
+      const blues = d.blue_balls.split(',').sort((a, b) => a - b)
+      d.red_balls = reds
+      d.blue_balls = blues
+      latestDraw.value = d
+    })
+  } catch {}
+  loadMiss()
+  loadSum()
+  loadRatio()
+  loadPool()
+  loadFrequency()
+  // 刷新实时预警快照，避免等待 SSE 30 秒周期
+  refreshAlertsSnapshot()
+  // 如果当前在复盘标签，也刷新期号列表
+  if (subActive.value === 'review') loadReviewIssues()
+}
+
+defineExpose({ refresh: onDataUpdated })
 </script>

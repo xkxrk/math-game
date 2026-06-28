@@ -26,8 +26,12 @@ class Predictor:
         rows = self.db.query(models.AppSettings).all()
         return {r.key: r.value for r in rows}
 
-    def predict(self, count: int = 1, history=None) -> dict:
-        """生成预测。"""
+    def predict(self, count: int = 1, history=None, model: str = "") -> dict:
+        """生成预测。
+
+        Args:
+            model: 指定模型名（覆盖全局配置）；为空则用全局配置的 llm_model。
+        """
         if history is None:
             history = (
                 self.db.query(models.LotteryRecord)
@@ -42,13 +46,14 @@ class Predictor:
         settings = self.get_settings()
         api_key = settings.get("llm_api_key") or ""
         base_url = settings.get("llm_base_url") or config.DEFAULT_LLM_BASE_URL
-        model = settings.get("llm_model") or config.DEFAULT_LLM_MODEL
+        # 显式指定的 model 优先于全局配置
+        used_model = model.strip() or settings.get("llm_model") or config.DEFAULT_LLM_MODEL
 
-        if not api_key or not model:
+        if not api_key or not used_model:
             # 无 API Key 时走启发式
             return self._heuristic_predict(history, count)
 
-        llm = self._call_llm(history, api_key, base_url, model, count)
+        llm = self._call_llm(history, api_key, base_url, used_model, count)
         if not llm or "error" in llm:
             logger.warning(f"LLM 预测失败，降级启发式: {llm}")
             return self._heuristic_predict(history, count)
@@ -61,7 +66,7 @@ class Predictor:
         return {
             "analysis": llm.get("analysis", ""),
             "predictions": validated,
-            "meta": llm.get("meta") or {"used_llm": True, "model": model},
+            "meta": llm.get("meta") or {"used_llm": True, "model": used_model},
         }
 
     # ---------- LLM 调用 ----------
@@ -174,6 +179,125 @@ class Predictor:
         except Exception as e:
             logger.error(f"LLM 调用异常: {e}")
             return {"error": f"LLM 调用失败: {e}"}
+
+    # ---------- 二次预测排序（评审） ----------
+
+    def rank_predictions(self, predictions: list, model: str) -> dict:
+        """让指定模型对所有候选号码组合打分排序。
+
+        Args:
+            predictions: [{red_balls, blue_balls, reason, source_model}, ...]
+            model: 评审模型名（覆盖全局配置）
+
+        Returns:
+            {ranking: [{index, score, comment}, ...], model: str} 按推荐度降序
+        """
+        if not predictions:
+            return {"error": "无候选组合可排序"}
+
+        settings = self.get_settings()
+        api_key = settings.get("llm_api_key") or ""
+        base_url = settings.get("llm_base_url") or config.DEFAULT_LLM_BASE_URL
+        used_model = model.strip() or settings.get("llm_model") or config.DEFAULT_LLM_MODEL
+        if not api_key:
+            return {"error": "未配置 API Key"}
+        if not used_model:
+            return {"error": "未指定评审模型"}
+
+        # 构造候选列表文本
+        lines = []
+        for idx, p in enumerate(predictions):
+            reds = ",".join(p.get("red_balls", []))
+            blues = ",".join(p.get("blue_balls", []))
+            src = p.get("source_model", "")
+            reason = (p.get("reason", "") or "").strip()
+            lines.append(f"{idx + 1}. [{src}] 前区 {reds} 后区 {blues}（理由：{reason}）")
+        cand_str = "\n".join(lines)
+
+        prompt = f"""你是中国超级大乐透(dlt)号码评估专家。以下是多个 AI 模型生成的候选号码组合，请基于统计合理性对它们进行评估并排序。
+
+候选组合：
+{cand_str}
+
+评估维度：
+1. 和值是否落在历史常见区间（80-119）
+2. 奇偶比是否均衡（2:3 或 3:2）
+3. 大小比是否均衡（大≥18，小≤17）
+4. 冷热号搭配是否合理
+5. 跨度是否适中
+
+只返回 JSON（不要 markdown，不要多余文字）：
+{{"ranking":[{{"index":0,"score":85,"comment":"简短点评"}}]}}
+
+要求：
+- index: 候选组合的序号（从 0 开始，对应上面列表序号-1）
+- score: 推荐度 0-100
+- comment: 30 字以内点评
+- 按推荐度从高到低排序
+- 必须覆盖所有候选组合
+""".strip()
+
+        url = self._build_chat_url(base_url)
+        payload = {
+            "model": used_model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 2000,
+            "temperature": 0.2,
+        }
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        try:
+            r = requests.post(url, headers=headers, json=payload, timeout=(30, 120))
+            if r.status_code < 200 or r.status_code >= 300:
+                return {"error": f"LLM HTTP {r.status_code}: {(r.text or '')[:200]}"}
+            data = r.json() if r.content else {}
+            content = (
+                ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+            ).strip()
+            # 去 markdown 代码块
+            if content.startswith("```json"):
+                content = content[7:]
+            if content.startswith("```"):
+                content = content[3:]
+            if content.endswith("```"):
+                content = content[:-3]
+            try:
+                parsed = json.loads(content)
+            except json.JSONDecodeError:
+                match = re.search(r"\{.*\}", content, re.DOTALL)
+                if match:
+                    parsed = json.loads(match.group(0))
+                else:
+                    return {"error": "LLM 返回非 JSON", "raw": content[:300]}
+
+            ranking = parsed.get("ranking", []) if isinstance(parsed, dict) else []
+            # 校验 index 范围并补齐缺失项
+            seen_idx = set()
+            valid = []
+            for item in ranking:
+                if not isinstance(item, dict):
+                    continue
+                idx = item.get("index", -1)
+                if not isinstance(idx, int) or idx < 0 or idx >= len(predictions) or idx in seen_idx:
+                    continue
+                seen_idx.add(idx)
+                valid.append({
+                    "index": idx,
+                    "score": max(0, min(100, int(item.get("score", 50)))),
+                    "comment": str(item.get("comment", ""))[:60],
+                })
+            # 补齐 LLM 遗漏的组合
+            for idx in range(len(predictions)):
+                if idx not in seen_idx:
+                    valid.append({"index": idx, "score": 50, "comment": "未评估"})
+            # 按分数降序
+            valid.sort(key=lambda x: x["score"], reverse=True)
+            return {"ranking": valid, "model": used_model}
+        except Exception as e:
+            logger.error(f"评审排序异常: {e}")
+            return {"error": f"评审失败: {e}"}
 
     @staticmethod
     def _build_chat_url(base_url: str) -> str:

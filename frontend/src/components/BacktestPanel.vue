@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="h-full overflow-y-auto pr-1">
     <!-- 子标签 -->
     <div class="flex gap-2 mb-4">
       <button
@@ -22,26 +22,23 @@
       <div class="flex flex-wrap items-end gap-3 mb-4">
         <div>
           <label class="block text-xs text-slate-400 mb-1">选择回测期号</label>
-          <select
+          <USelect
             v-model="selectedIssue"
-            class="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm text-slate-100 outline-none min-w-[200px]"
-          >
-            <option v-for="i in issues" :key="i.issue" :value="i.issue" class="bg-slate-800">
-              {{ i.issue }} ({{ i.date }})
-            </option>
-          </select>
+            :options="issueOptions"
+            class="w-[200px]"
+          />
         </div>
         <div>
           <label class="block text-xs text-slate-400 mb-1">加注数</label>
-          <select
+          <USelect
             v-model="backtestCount"
-            class="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm text-slate-100 outline-none"
-          >
-            <option :value="1" class="bg-slate-800">1 注</option>
-            <option :value="3" class="bg-slate-800">3 注</option>
-            <option :value="5" class="bg-slate-800">5 注</option>
-            <option :value="10" class="bg-slate-800">10 注</option>
-          </select>
+            :options="[{value:1,label:'1 注'},{value:3,label:'3 注'},{value:5,label:'5 注'},{value:10,label:'10 注'}]"
+            class="w-[120px]"
+          />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">预测模型</label>
+          <ModelSelector v-model="backtestModels" />
         </div>
         <button
           @click="runBacktest"
@@ -52,11 +49,11 @@
         </button>
       </div>
       <p class="text-xs text-slate-500 mb-4">
-        AI 将基于所选期号<strong class="text-slate-300">之前</strong>的历史数据生成 <strong class="text-violet-300">{{ backtestCount }} 注</strong>预测，再与该期实际开奖对比分别计算每注奖金。
+        AI 将基于所选期号<strong class="text-slate-300">之前</strong>的历史数据生成 <strong class="text-violet-300">{{ backtestCount }} 注</strong>预测，再与该期实际开奖对比分别计算每注奖金。可选多模型对比。
       </p>
 
-      <!-- 回测结果 -->
-      <div v-if="backtestResult" class="space-y-4">
+      <!-- 单模型回测结果 -->
+      <div v-if="backtestResult && !backtestResult.multi" class="space-y-4">
         <!-- 实际开奖 -->
         <div class="p-4 rounded-xl bg-slate-500/10 border border-slate-400/20">
           <div class="flex items-center justify-between mb-2">
@@ -138,6 +135,95 @@
         <div v-if="backtestResult.analysis" class="p-4 rounded-xl bg-white/5 border border-white/10">
           <div class="text-xs text-slate-400 mb-2">AI 分析</div>
           <p class="text-sm text-slate-300 leading-relaxed">{{ backtestResult.analysis }}</p>
+        </div>
+      </div>
+
+      <!-- 多模型回测结果 -->
+      <div v-if="backtestResult && backtestResult.multi" class="space-y-4">
+        <!-- 实际开奖（共享） -->
+        <div class="p-4 rounded-xl bg-slate-500/10 border border-slate-400/20">
+          <div class="text-xs text-slate-400 mb-2">
+            实际开奖 · {{ backtestResult.target_issue }} ({{ backtestResult.target_date }})
+          </div>
+          <BallDisplay :red-balls="backtestResult.actual_red_balls" :blue-balls="backtestResult.actual_blue_balls" />
+        </div>
+
+        <!-- 模型对比表 -->
+        <div class="overflow-x-auto rounded-xl border border-white/10">
+          <table class="w-full text-sm">
+            <thead class="bg-white/5 text-slate-300">
+              <tr>
+                <th class="px-3 py-2 text-left">模型</th>
+                <th class="px-3 py-2 text-center">注数</th>
+                <th class="px-3 py-2 text-right">总花费</th>
+                <th class="px-3 py-2 text-right">总中奖</th>
+                <th class="px-3 py-2 text-right">净收益</th>
+                <th class="px-3 py-2 text-center">最佳命中</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="r in backtestResult.results"
+                :key="r.model"
+                class="border-t border-white/5"
+                :class="r.error ? 'bg-red-500/5' : (r.net_profit > 0 ? 'bg-emerald-500/5' : '')"
+              >
+                <td class="px-3 py-2">
+                  <span class="font-bold text-slate-200">{{ r.model }}</span>
+                  <span v-if="r.error" class="ml-2 text-xs text-red-300">{{ r.error }}</span>
+                </td>
+                <td class="px-3 py-2 text-center text-slate-300">{{ r.predictions.length }}</td>
+                <td class="px-3 py-2 text-right text-slate-300">{{ r.total_cost }}元</td>
+                <td class="px-3 py-2 text-right text-amber-300">{{ formatMoney(r.total_winnings) }}</td>
+                <td
+                  class="px-3 py-2 text-right font-bold"
+                  :class="r.net_profit >= 0 ? 'text-emerald-300' : 'text-red-300'"
+                >
+                  {{ r.net_profit >= 0 ? '+' : '' }}{{ formatMoney(r.net_profit) }}
+                </td>
+                <td class="px-3 py-2 text-center">
+                  <span v-if="r.best_level > 0" class="text-amber-300 font-bold">第{{ r.best_level }}等</span>
+                  <span v-else class="text-slate-500">-</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 每个模型的详细预测 -->
+        <div
+          v-for="r in backtestResult.results"
+          :key="r.model"
+          class="rounded-xl border border-white/10 overflow-hidden"
+        >
+          <div class="px-4 py-2 bg-white/5 border-b border-white/10 flex items-center justify-between">
+            <span class="text-sm font-bold text-slate-200">{{ r.model }}</span>
+            <span
+              v-if="r.used_llm"
+              class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300"
+            >LLM</span>
+          </div>
+          <div v-if="r.error" class="p-4 text-sm text-red-300">{{ r.error }}</div>
+          <div v-else class="p-3 space-y-2">
+            <div
+              v-for="(pred, idx) in r.predictions"
+              :key="idx"
+              class="p-3 rounded-lg border"
+              :class="predPrizeCardClass(pred.prize.level)"
+            >
+              <div class="flex items-center justify-between mb-2 text-xs">
+                <span class="text-slate-400">第 {{ idx + 1 }} 注 · {{ pred.prize.desc }}</span>
+                <span v-if="pred.prize.amount > 0" class="text-amber-300 font-bold">{{ formatMoney(pred.prize.amount) }}</span>
+              </div>
+              <BallDisplay :red-balls="pred.red_balls" :blue-balls="pred.blue_balls" />
+              <div class="mt-2 text-xs text-slate-400">
+                前区 {{ pred.prize.red_hits }}/5 · 后区 {{ pred.prize.blue_hits }}/2
+              </div>
+              <div v-if="pred.reason" class="mt-1 text-xs text-slate-500">
+                <span class="text-violet-300">理由：</span>{{ pred.reason }}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -308,26 +394,23 @@
       <div class="flex flex-wrap items-end gap-3 mb-4">
         <div>
           <label class="block text-xs text-slate-400 mb-1">选择起始期号</label>
-          <select
+          <USelect
             v-model="aiSimIssue"
-            class="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm text-slate-100 outline-none min-w-[200px]"
-          >
-            <option v-for="i in issues" :key="i.issue" :value="i.issue" class="bg-slate-800">
-              {{ i.issue }} ({{ i.date }})
-            </option>
-          </select>
+            :options="issueOptions"
+            class="w-[200px]"
+          />
         </div>
         <div>
           <label class="block text-xs text-slate-400 mb-1">加注数</label>
-          <select
+          <USelect
             v-model="aiSimCount"
-            class="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm text-slate-100 outline-none"
-          >
-            <option :value="1" class="bg-slate-800">1 注</option>
-            <option :value="3" class="bg-slate-800">3 注</option>
-            <option :value="5" class="bg-slate-800">5 注</option>
-            <option :value="10" class="bg-slate-800">10 注</option>
-          </select>
+            :options="[{value:1,label:'1 注'},{value:3,label:'3 注'},{value:5,label:'5 注'},{value:10,label:'10 注'}]"
+            class="w-[120px]"
+          />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">预测模型</label>
+          <ModelSelector v-model="aiSimModels" />
         </div>
         <button
           @click="runAiSimulate"
@@ -338,11 +421,11 @@
         </button>
       </div>
       <p class="text-xs text-slate-500 mb-4">
-        AI 基于所选期号<strong class="text-slate-300">之前</strong>的历史数据生成 <strong class="text-violet-300">{{ aiSimCount }} 组</strong>号码，然后从该期开始<strong class="text-slate-300">一直买到最新一期</strong>，每期购买全部注数，统计累计收益。
+        AI 基于所选期号<strong class="text-slate-300">之前</strong>的历史数据生成 <strong class="text-violet-300">{{ aiSimCount }} 组</strong>号码，然后从该期开始<strong class="text-slate-300">一直买到最新一期</strong>，每期购买全部注数，统计累计收益。可选多模型对比。
       </p>
 
-      <!-- 结果 -->
-      <div v-if="aiSimResult" class="space-y-4">
+      <!-- 单模型结果 -->
+      <div v-if="aiSimResult && !aiSimResult.multi" class="space-y-4">
         <!-- AI 预测的号码(可能多注) -->
         <div class="space-y-3">
           <div
@@ -477,15 +560,97 @@
           </table>
         </div>
       </div>
+
+      <!-- 多模型结果 -->
+      <div v-if="aiSimResult && aiSimResult.multi" class="space-y-4">
+        <!-- 模型对比表 -->
+        <div class="overflow-x-auto rounded-xl border border-white/10">
+          <table class="w-full text-sm">
+            <thead class="bg-white/5 text-slate-300">
+              <tr>
+                <th class="px-3 py-2 text-left">模型</th>
+                <th class="px-3 py-2 text-center">期数</th>
+                <th class="px-3 py-2 text-center">注/期</th>
+                <th class="px-3 py-2 text-right">总花费</th>
+                <th class="px-3 py-2 text-right">总中奖</th>
+                <th class="px-3 py-2 text-right">净收益</th>
+                <th class="px-3 py-2 text-right">ROI</th>
+                <th class="px-3 py-2 text-center">中奖率</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="r in aiSimResult.results"
+                :key="r.model"
+                class="border-t border-white/5"
+                :class="r.error ? 'bg-red-500/5' : (r.simulation && r.simulation.net_profit > 0 ? 'bg-emerald-500/5' : '')"
+              >
+                <td class="px-3 py-2">
+                  <span class="font-bold text-slate-200">{{ r.model }}</span>
+                  <span v-if="r.error" class="ml-2 text-xs text-red-300">{{ r.error }}</span>
+                </td>
+                <td class="px-3 py-2 text-center text-slate-300">{{ r.simulation?.total_bets ?? '-' }}</td>
+                <td class="px-3 py-2 text-center text-slate-300">{{ r.simulation?.bet_per_period ?? '-' }}</td>
+                <td class="px-3 py-2 text-right text-slate-300">{{ r.simulation?.total_cost ?? '-' }}元</td>
+                <td class="px-3 py-2 text-right text-amber-300">{{ r.simulation ? formatMoney(r.simulation.total_winnings) : '-' }}</td>
+                <td
+                  class="px-3 py-2 text-right font-bold"
+                  :class="r.simulation && r.simulation.net_profit >= 0 ? 'text-emerald-300' : 'text-red-300'"
+                >
+                  {{ r.simulation ? (r.simulation.net_profit >= 0 ? '+' : '') + formatMoney(r.simulation.net_profit) : '-' }}
+                </td>
+                <td
+                  class="px-3 py-2 text-right"
+                  :class="r.simulation && r.simulation.roi >= 0 ? 'text-emerald-300' : 'text-red-300'"
+                >
+                  {{ r.simulation ? (r.simulation.roi >= 0 ? '+' : '') + r.simulation.roi + '%' : '-' }}
+                </td>
+                <td class="px-3 py-2 text-center text-slate-300">{{ r.simulation?.win_rate ?? '-' }}%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 每个模型的预测号码 + 分析 -->
+        <div
+          v-for="r in aiSimResult.results"
+          :key="r.model"
+          class="rounded-xl border border-white/10 overflow-hidden"
+        >
+          <div class="px-4 py-2 bg-white/5 border-b border-white/10 flex items-center justify-between">
+            <span class="text-sm font-bold text-slate-200">{{ r.model }}</span>
+            <span v-if="r.error" class="text-xs text-red-300">失败</span>
+          </div>
+          <div v-if="r.error" class="p-4 text-sm text-red-300">{{ r.error }}</div>
+          <div v-else class="p-3 space-y-3">
+            <!-- 预测号码 -->
+            <div class="flex flex-wrap gap-2">
+              <div
+                v-for="(pred, idx) in r.predictions"
+                :key="idx"
+                class="p-2 rounded-lg bg-violet-500/10 border border-violet-400/20"
+              >
+                <div class="text-[10px] text-slate-400 mb-1">第{{ idx + 1 }}注</div>
+                <BallDisplay :red-balls="pred.red_balls" :blue-balls="pred.blue_balls" />
+              </div>
+            </div>
+            <div v-if="r.analysis" class="text-xs text-slate-400 leading-relaxed">
+              <span class="text-violet-300">分析：</span>{{ r.analysis }}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { api } from '../api.js'
 import { useToast } from '../composables/useToast.js'
 import BallDisplay from './BallDisplay.vue'
+import ModelSelector from './ModelSelector.vue'
+import USelect from './USelect.vue'
 
 const toast = useToast()
 const subTabs = [
@@ -497,8 +662,10 @@ const subActive = ref('backtest')
 
 // --- 回测 ---
 const issues = ref([])
+const issueOptions = computed(() => issues.value.map(i => ({ value: i.issue, label: `${i.issue} (${i.date})` })))
 const selectedIssue = ref('')
 const backtestCount = ref(1)
+const backtestModels = ref([])
 const backtestLoading = ref(false)
 const backtestResult = ref(null)
 
@@ -519,9 +686,14 @@ async function runBacktest() {
   backtestLoading.value = true
   backtestResult.value = null
   try {
-    backtestResult.value = await api.backtestPredict(selectedIssue.value, backtestCount.value)
+    backtestResult.value = await api.backtestPredict(selectedIssue.value, backtestCount.value, backtestModels.value)
     const r = backtestResult.value
-    toast.success(`回测完成: ${r.bet_count}注, 总中奖${formatMoney(r.total_winnings)}, 净收益${r.net_profit >= 0 ? '+' : ''}${formatMoney(r.net_profit)}`)
+    if (r.multi) {
+      const ok = r.results.filter(x => !x.error).length
+      toast.success(`多模型回测完成: ${ok}/${r.results.length} 成功`)
+    } else {
+      toast.success(`回测完成: ${r.bet_count}注, 总中奖${formatMoney(r.total_winnings)}, 净收益${r.net_profit >= 0 ? '+' : ''}${formatMoney(r.net_profit)}`)
+    }
   } catch (e) {
     toast.error('回测失败: ' + e.message)
   } finally {
@@ -566,6 +738,7 @@ async function runSimulate() {
 // --- AI 预测 + 长期模拟 ---
 const aiSimIssue = ref('')
 const aiSimCount = ref(1)
+const aiSimModels = ref([])
 const aiSimLoading = ref(false)
 const aiSimResult = ref(null)
 
@@ -573,9 +746,14 @@ async function runAiSimulate() {
   aiSimLoading.value = true
   aiSimResult.value = null
   try {
-    aiSimResult.value = await api.aiSimulate(aiSimIssue.value, aiSimCount.value)
-    const s = aiSimResult.value.simulation
-    toast.success(`模拟完成: ${s.total_bets}期 × ${s.bet_per_period}注, 净收益${s.net_profit >= 0 ? '+' : ''}${formatMoney(s.net_profit)}`)
+    aiSimResult.value = await api.aiSimulate(aiSimIssue.value, aiSimCount.value, aiSimModels.value)
+    if (aiSimResult.value.multi) {
+      const ok = aiSimResult.value.results.filter(x => !x.error).length
+      toast.success(`多模型模拟完成: ${ok}/${aiSimResult.value.results.length} 成功`)
+    } else {
+      const s = aiSimResult.value.simulation
+      toast.success(`模拟完成: ${s.total_bets}期 × ${s.bet_per_period}注, 净收益${s.net_profit >= 0 ? '+' : ''}${formatMoney(s.net_profit)}`)
+    }
   } catch (e) {
     toast.error('模拟失败: ' + e.message)
   } finally {
@@ -596,20 +774,40 @@ function levelColor(level) {
   return 'bg-slate-500/20 text-slate-300'
 }
 
-async function loadIssues() {
+async function loadIssues(preserveSelection = false) {
   try {
+    const prevSelected = selectedIssue.value
+    const prevAiSim = aiSimIssue.value
     issues.value = await api.getBacktestIssues(100)
     if (issues.value.length > 1) {
-      // 默认选倒数第二期(最新一期可能还没开奖)
-      selectedIssue.value = issues.value[1].issue
-      // AI 模拟默认选倒数第10期(留出足够的后续期数)
-      const idx = Math.min(9, issues.value.length - 1)
-      aiSimIssue.value = issues.value[idx].issue
+      if (preserveSelection && prevSelected && issues.value.some(i => i.issue === prevSelected)) {
+        // 保留原选择
+      } else {
+        selectedIssue.value = issues.value[1].issue
+      }
+      if (preserveSelection && prevAiSim && issues.value.some(i => i.issue === prevAiSim)) {
+        aiSimIssue.value = prevAiSim
+      } else {
+        const idx = Math.min(9, issues.value.length - 1)
+        aiSimIssue.value = issues.value[idx].issue
+      }
     }
   } catch (e) {
     toast.error('加载期号失败: ' + e.message)
   }
 }
 
-onMounted(loadIssues)
+// 监听数据更新事件（开奖历史抓取最新后触发）
+function onDataUpdated() {
+  loadIssues(true)
+}
+
+onMounted(() => {
+  loadIssues()
+  window.addEventListener('lottery-data-updated', onDataUpdated)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('lottery-data-updated', onDataUpdated)
+})
 </script>

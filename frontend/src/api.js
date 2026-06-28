@@ -28,9 +28,22 @@ export const api = {
   triggerScrape: (limit = 200) => request(`/scrape?limit=${limit}`, { method: 'POST' }),
 
   // 预测
-  predict: (count = 1) => request(`/predict?count=${count}`, { method: 'POST' }),
-  getPredictions: (limit = 20) => request(`/predictions?limit=${limit}`),
+  predict: (count = 1, models = []) => {
+    const m = models.length ? `&models=${encodeURIComponent(models.join(','))}` : ''
+    return request(`/predict?count=${count}${m}`, { method: 'POST' })
+  },
+  getPredictions: (limit = 20, llmModel = '') => {
+    let path = `/predictions?limit=${limit}`
+    if (llmModel) path += `&llm_model=${encodeURIComponent(llmModel)}`
+    return request(path)
+  },
+  getPredictionModels: () => request('/predictions/models'),
   evaluate: () => request('/evaluate', { method: 'POST' }),
+  predictRank: (predictions, model) =>
+    request('/predict/rank', {
+      method: 'POST',
+      body: JSON.stringify({ predictions, model }),
+    }),
 
   // 后台
   adminStatus: () => request('/admin/status'),
@@ -58,10 +71,10 @@ export const api = {
 
   // 回测
   getBacktestIssues: (limit = 100) => request(`/backtest/issues?limit=${limit}`),
-  backtestPredict: (issue, count = 1) =>
+  backtestPredict: (issue, count = 1, models = []) =>
     request('/backtest/predict', {
       method: 'POST',
-      body: JSON.stringify({ issue, count }),
+      body: JSON.stringify({ issue, count, models }),
     }),
   simulateFixed: (redBalls, blueBalls, startIssue = '', endIssue = '') =>
     request('/backtest/simulate', {
@@ -73,14 +86,14 @@ export const api = {
         end_issue: endIssue,
       }),
     }),
-  aiSimulate: (issue, count = 1) =>
+  aiSimulate: (issue, count = 1, models = []) =>
     request('/backtest/ai-simulate', {
       method: 'POST',
-      body: JSON.stringify({ issue, count }),
+      body: JSON.stringify({ issue, count, models }),
     }),
 
   // 用户投注
-  adoptBet: (redBalls, blueBalls, targetIssue = '', source = 'manual', reason = '') =>
+  adoptBet: (redBalls, blueBalls, targetIssue = '', source = 'manual', reason = '', llmModel = '') =>
     request('/bets/adopt', {
       method: 'POST',
       body: JSON.stringify({
@@ -89,10 +102,14 @@ export const api = {
         target_issue: targetIssue,
         source,
         reason,
+        llm_model: llmModel,
       }),
     }),
-  getBets: (status = 'all', limit = 100) =>
-    request(`/bets?status=${status}&limit=${limit}`),
+  getBets: (status = 'all', llmModel = '', limit = 100) => {
+    let path = `/bets?status=${status}&limit=${limit}`
+    if (llmModel) path += `&llm_model=${encodeURIComponent(llmModel)}`
+    return request(path)
+  },
   getBetsSummary: () => request('/bets/summary'),
   deleteBet: (id) => request(`/bets/${id}`, { method: 'DELETE' }),
   evaluateBets: () => request('/bets/evaluate', { method: 'POST' }),
@@ -143,4 +160,23 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(rules),
     }),
+
+  // 模型设置（轻量，无需登录）
+  getLlmConfig: () => request('/settings/llm'),
+  saveLlmConfig: (cfg) =>
+    request('/settings/llm', {
+      method: 'POST',
+      body: JSON.stringify(cfg),
+    }),
+  testLlmConnection: () => request('/settings/test', { method: 'POST' }),
+  getOllamaModels: () => request('/settings/models'),
+  pullOllamaModel: (modelName) =>
+    request('/settings/pull-model', {
+      method: 'POST',
+      body: JSON.stringify({ model_name: modelName }),
+    }),
+  getPullStatus: (model = '') => request(`/settings/pull-status?model=${encodeURIComponent(model)}`),
+
+  // 投注模型筛选
+  getBetModels: () => request('/bets/models'),
 }

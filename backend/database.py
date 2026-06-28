@@ -54,21 +54,27 @@ def _migrate_columns():
     from sqlalchemy import text, inspect
 
     inspector = inspect(engine)
-    if "lottery_records" not in inspector.get_table_names():
-        return
-    existing_cols = {c["name"] for c in inspector.get_columns("lottery_records")}
-    new_cols = {
-        "prize_pool": "TEXT",
-        "first_prize_count": "TEXT",
-        "first_prize_amount": "TEXT",
-        "second_prize_count": "TEXT",
-        "second_prize_amount": "TEXT",
+    table_cols = {
+        "lottery_records": {
+            "prize_pool": "TEXT",
+            "first_prize_count": "TEXT",
+            "first_prize_amount": "TEXT",
+            "second_prize_count": "TEXT",
+            "second_prize_amount": "TEXT",
+        },
+        "user_bets": {
+            "llm_model": "TEXT",
+        },
     }
     with engine.connect() as conn:
-        for col, col_type in new_cols.items():
-            if col not in existing_cols:
-                conn.execute(text(f"ALTER TABLE lottery_records ADD COLUMN {col} {col_type}"))
-                conn.commit()
+        for table, cols in table_cols.items():
+            if table not in inspector.get_table_names():
+                continue
+            existing = {c["name"] for c in inspector.get_columns(table)}
+            for col, col_type in cols.items():
+                if col not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
+                    conn.commit()
 
 
 def _seed_defaults():

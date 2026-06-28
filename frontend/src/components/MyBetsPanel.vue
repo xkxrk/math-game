@@ -1,7 +1,7 @@
 <template>
-  <div>
+  <div class="flex flex-col h-full min-h-0">
     <!-- 汇总卡片 -->
-    <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6 shrink-0">
       <div class="p-3 rounded-xl bg-white/5 border border-white/10 text-center">
         <div class="text-xs text-slate-400">总投注</div>
         <div class="text-xl font-bold text-slate-200">{{ summary.total_bets }}</div>
@@ -34,8 +34,9 @@
     </div>
 
     <!-- 操作栏 -->
-    <div class="flex items-center justify-between mb-4">
-      <div class="flex gap-2">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4 shrink-0">
+      <div class="flex flex-wrap items-center gap-2">
+        <!-- 状态筛选 -->
         <button
           v-for="f in filters"
           :key="f.id"
@@ -48,6 +49,18 @@
           {{ f.name }}
           <span v-if="f.count !== null" class="ml-1 text-xs opacity-70">({{ f.count }})</span>
         </button>
+
+        <!-- 模型筛选 -->
+        <div class="flex items-center gap-2 ml-2">
+          <span class="text-xs text-slate-400">模型:</span>
+          <USelect
+            v-model="modelFilter"
+            :options="betModelOptions"
+            placeholder="全部模型"
+            @change="load"
+            class="w-[160px]"
+          />
+        </div>
       </div>
       <button
         @click="evaluate"
@@ -59,7 +72,7 @@
     </div>
 
     <!-- 投注列表 -->
-    <div class="space-y-3">
+    <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden space-y-3 pr-1">
       <div
         v-for="bet in bets"
         :key="bet.id"
@@ -77,6 +90,13 @@
               <span v-if="bet.source === 'ai_predict'" class="px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-300">AI预测</span>
               <span v-else-if="bet.source === 'backtest'" class="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300">回测</span>
               <span v-else class="px-2 py-0.5 rounded-full bg-slate-500/20 text-slate-400">手动</span>
+              <span
+                v-if="bet.llm_model"
+                class="px-2 py-0.5 rounded-full bg-fuchsia-500/20 text-fuchsia-300"
+                :title="`预测模型: ${bet.llm_model}`"
+              >
+                {{ bet.llm_model }}
+              </span>
               <span>花费: {{ bet.cost }}元</span>
               <span v-if="bet.created_at">{{ formatTime(bet.created_at) }}</span>
             </div>
@@ -125,13 +145,20 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { api } from '../api.js'
 import { useToast } from '../composables/useToast.js'
 import BallDisplay from './BallDisplay.vue'
+import USelect from './USelect.vue'
 
 const toast = useToast()
 const bets = ref([])
+const betModels = ref([])
+const betModelOptions = computed(() => [
+  { value: '', label: '全部模型' },
+  ...betModels.value.map(m => ({ value: m, label: m })),
+])
+const modelFilter = ref('')
 const summary = ref({
   total_bets: 0,
   total_cost: 0,
@@ -151,10 +178,19 @@ const filters = ref([
   { id: 'evaluated', name: '已评估', count: null },
 ])
 
+async function loadBetModels() {
+  try {
+    const r = await api.getBetModels()
+    betModels.value = r.models || []
+  } catch {
+    // ignore
+  }
+}
+
 async function load() {
   try {
     const [betsData, summaryData] = await Promise.all([
-      api.getBets(filter.value),
+      api.getBets(filter.value, modelFilter.value),
       api.getBetsSummary(),
     ])
     bets.value = betsData
@@ -185,7 +221,7 @@ async function remove(id) {
   try {
     await api.deleteBet(id)
     toast.success('已删除')
-    await load()
+    await Promise.all([load(), loadBetModels()])
   } catch (e) {
     toast.error('删除失败: ' + e.message)
   }
@@ -209,6 +245,18 @@ function prizeBadgeClass(level) {
   return 'bg-emerald-500/20 text-emerald-300'
 }
 
-onMounted(load)
+function onDataUpdated() {
+  load()
+  loadBetModels()
+}
+
+onMounted(() => {
+  loadBetModels()
+  load()
+  window.addEventListener('lottery-data-updated', onDataUpdated)
+})
+onUnmounted(() => {
+  window.removeEventListener('lottery-data-updated', onDataUpdated)
+})
 defineExpose({ load })
 </script>
